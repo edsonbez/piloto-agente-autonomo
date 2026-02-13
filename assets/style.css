@@ -1,0 +1,44 @@
+/* assets/style.css */
+@import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600&display=swap');
+
+.stApp {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+/* Título com Identidade ALESC */
+.main-title {
+    color: #333;
+    border-bottom: 4px solid #e30613; /* Linha Vermelha */
+    padding-bottom: 10px;
+    margin-bottom: 30px;
+    font-size: 24px;
+}
+
+/* Sidebar Escura e Profissional */
+[data-testid="stSidebar"] {
+    background-color: #1e1e1e;
+}
+
+.sidebar-text {
+    color: white;
+    font-weight: bold;
+    font-size: 1.2rem;
+    padding: 20px 0;
+    text-align: center;
+    border-bottom: 1px solid #444;
+}
+
+/* Botão Vermelho ALESC */
+.stButton>button {
+    background-color: #e30613;
+    color: white;
+    font-weight: bold;
+    border: none;
+    transition: 0.3s;
+}
+
+.stButton>button:hover {
+    background-color: #007a33; /* Muda para verde ao passar o mouse */
+    color: white;
+}

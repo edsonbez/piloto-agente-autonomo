@@ -1,0 +1,14 @@
+# Ambiente Virtual
+venv/
+.env
+
+# Credenciais do Firebase (Segurança!)
+*.json
+
+# Cache do Python
+**/__pycache__/
+*.pyc
+
+# Arquivos temporários do Sistema
+.DS_Store
+Thumbs.db
