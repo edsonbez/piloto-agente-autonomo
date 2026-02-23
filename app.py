@@ -1,116 +1,121 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import time # Importado para medir o tempo
 from logica_busca import verificar_saudacao, calcular_pontuacao
 from dashboard import exibir_dashboard
-from firebase_utils import registrar_atendimento, registrar_busca_vazia, registrar_feedback_negativo
+from firebase_utils import registrar_atendimento, registrar_monitoramento_ia
+from agente_motor import consultar_ia_stream 
 import os
 
 st.set_page_config(page_title="Suporte ALESC", layout="wide", page_icon="🛡️")
+
+# --- ESTADO DA SESSÃO ---
+if 'historico_chat' not in st.session_state: st.session_state.historico_chat = ""
+if 'mensagens_exibicao' not in st.session_state: st.session_state.mensagens_exibicao = []
+if 'atendimento_concluido' not in st.session_state: st.session_state.atendimento_concluido = False
+if 'protocolo' not in st.session_state: st.session_state.protocolo = None
+if 'nome_confirmado' not in st.session_state: st.session_state.nome_confirmado = False
 
 # Carregar CSS
 if os.path.exists(os.path.join("assets", "style.css")):
     with open(os.path.join("assets", "style.css")) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# Gerenciamento de Estado
-if 'tentativa_atual' not in st.session_state: st.session_state.tentativa_atual = 0
-if 'solucoes_encontradas' not in st.session_state: st.session_state.solucoes_encontradas = []
-if 'atendimento_concluido' not in st.session_state: st.session_state.atendimento_concluido = False
-if 'protocolo' not in st.session_state: st.session_state.protocolo = None
-if 'form_counter' not in st.session_state: st.session_state.form_counter = 0
-if 'busca_realizada' not in st.session_state: st.session_state.busca_realizada = False
-
 def reset_atendimento():
-    st.session_state.solucoes_encontradas = []
-    st.session_state.tentativa_atual = 0
-    st.session_state.atendimento_concluido = False
-    st.session_state.protocolo = None
-    st.session_state.busca_realizada = False
-    st.session_state.form_counter += 1
+    keys = ['atendimento_concluido', 'protocolo', 'historico_chat', 'mensagens_exibicao', 'nome_confirmado', 'user_name']
+    for key in keys:
+        if key in st.session_state: del st.session_state[key]
+    st.rerun()
 
 def gerar_protocolo():
     return f"{datetime.now().strftime('%Y%m')}-{datetime.now().strftime('%H%M%S')}"
 
-# Navegação
+# --- BARRA LATERAL ---
 st.sidebar.markdown("🛡️ **ALESC DIGITAL**")
+if st.sidebar.button("🔄 Reiniciar Atendimento"): 
+    reset_atendimento()
 menu = st.sidebar.selectbox("Menu", ["💬 Atendimento", "📊 Gestão"])
 
 if menu == "💬 Atendimento":
-    _, col_central, _ = st.columns([1, 2, 1])
-    with col_central:
-        st.title("Atendimento Inteligente")
-        
-        if st.session_state.atendimento_concluido and st.session_state.protocolo:
-            st.success(f"### Chamado Encaminhado!\n**Protocolo:** `{st.session_state.protocolo}`")
-            st.info("Em breve um técnico entrará em contato.")
-            if st.button("Novo Atendimento"):
-                reset_atendimento()
+    st.title("Atendimento Inteligente ALESC")
+
+    if not st.session_state.nome_confirmado:
+        st.info("Olá! Sou o Assistente da ALESC. Como devo te chamar?")
+        nome_input = st.text_input("Digite seu nome e aperte Enter", key="user_name")
+        if nome_input:
+            st.session_state.nome_confirmado = True
+            st.rerun()
+        st.stop()
+
+    nome = st.session_state.get("user_name", "Usuário")
+
+    for msg in st.session_state.mensagens_exibicao:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # --- BLOCO COM CRONÔMETRO PARA TESTE DE LENTIDÃO ---
+    if prompt := st.chat_input("Como posso ajudar?"):
+        st.session_state.mensagens_exibicao.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            placeholder.markdown("🔍 *Conectando ao servidor de IA...*")
+            
+            full_response = ""
+            t_inicio = time.time() # Nome curto para evitar confusão
+            
+            try:
+                # Chama o motor
+                generator = consultar_ia_stream(nome, prompt, st.session_state.historico_chat)
+                
+                for chunk in generator:
+                    if chunk:
+                        if not full_response:
+                            placeholder.empty()
+                        full_response += chunk
+                        placeholder.markdown(full_response + " ▌")
+                
+                # Finaliza o texto na tela
+                placeholder.markdown(full_response)
+                
+                # Cálculo do tempo dentro do try
+                t_fim = time.time() - t_inicio
+                st.caption(f"Fonte: IA | ⏱️ {t_fim:.2f}s")
+
+                # Grava no histórico e recarrega
+                if full_response.strip():
+                    st.session_state.historico_chat += f"\nUsuário: {prompt}\nAssistente: {full_response}\n"
+                    st.session_state.mensagens_exibicao.append({"role": "assistant", "content": full_response})
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Erro ao processar resposta: {str(e)}")
+
+
+
+    # --- BOTÕES DE AÇÃO ---
+    if st.session_state.mensagens_exibicao and not st.session_state.atendimento_concluido:
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("✅ Resolveu"):
+                registrar_atendimento(nome, "Resolvido via Chat", "IA", True)
+                st.success("Atendimento finalizado com sucesso!")
+                st.balloons()
+        with c2:
+            if st.button("📩 Chamar Técnico"):
+                prot = gerar_protocolo()
+                relato_tecnico = st.session_state.mensagens_exibicao[-2]["content"] if len(st.session_state.mensagens_exibicao) >= 2 else prompt
+                registrar_atendimento(nome, relato_tecnico, "IA", False, prot)
+                st.session_state.protocolo = prot
+                st.session_state.atendimento_concluido = True
                 st.rerun()
-            st.stop()
 
-        nome = st.text_input("Seu Nome", key=f"n_{st.session_state.form_counter}")
-        relato = st.text_area("Descreva o problema", key=f"r_{st.session_state.form_counter}", placeholder="Ex: Erro ao anexar no SGP...")
-        
-        if st.button("🔍 SOLICITAR AJUDA"):
-            if nome and relato:
-                saudacao = verificar_saudacao(relato)
-                if saudacao:
-                    st.info(saudacao)
-                else:
-                    resultados = calcular_pontuacao(relato)
-                    st.session_state.solucoes_encontradas = resultados
-                    st.session_state.busca_realizada = True
-                    st.session_state.tentativa_atual = 0
-                    
-                    if not resultados:
-                        registrar_busca_vazia(nome, relato)
-            else:
-                st.error("Preencha nome e relato.")
-
-        if st.session_state.busca_realizada:
-            if st.session_state.solucoes_encontradas:
-                idx = st.session_state.tentativa_atual
-                sugestao = st.session_state.solucoes_encontradas[idx]
-                
-                # --- SPOILER DE INTELIGÊNCIA ---
-                if idx == 0:
-                    sistemas = [s['sistema'] for s in st.session_state.solucoes_encontradas]
-                    resumo = ", ".join([f"{v} de {k}" for k, v in pd.Series(sistemas).value_counts().items()])
-                    st.success(f"🤖 **Análise:** Encontrei {len(sistemas)} soluções ({resumo}).")
-                
-                st.markdown("---")
-                st.subheader(f"💡 Sugestão {idx+1} (Sistema: {sugestao['sistema']})")
-                st.write(sugestao['resposta'])
-                
-                c1, c2, c3 = st.columns(3)
-                
-                if c1.button("✅ Resolveu"):
-                    registrar_atendimento(nome, relato, sugestao['sistema'], True)
-                    st.success("Atendimento concluído!")
-                    st.balloons()
-                    if st.button("Finalizar"): reset_atendimento(); st.rerun()
-
-                if idx < len(st.session_state.solucoes_encontradas) - 1:
-                    if c2.button("➡️ Outra opção"):
-                        registrar_feedback_negativo(sugestao['sistema'], relato)
-                        st.session_state.tentativa_atual += 1
-                        st.rerun()
-                
-                if c3.button("📩 Chamar Técnico"):
-                    prot = gerar_protocolo()
-                    registrar_atendimento(nome, relato, sugestao['sistema'], False, prot)
-                    st.session_state.protocolo = prot
-                    st.session_state.atendimento_concluido = True
-                    st.rerun()
-            else:
-                st.warning("⚠️ Nenhuma solução automática encontrada.")
-                if st.button("📩 Enviar para o Técnico"):
-                    prot = gerar_protocolo()
-                    registrar_atendimento(nome, relato, "Não Identificado", False, prot)
-                    st.session_state.protocolo = prot
-                    st.session_state.atendimento_concluido = True
-                    st.rerun()
+    if st.session_state.atendimento_concluido:
+        st.warning(f"Chamado aberto! Protocolo: **{st.session_state.protocolo}**")
 
 elif menu == "📊 Gestão":
     exibir_dashboard()

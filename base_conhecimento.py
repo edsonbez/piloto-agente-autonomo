@@ -100,5 +100,17 @@ SOLUCOES_CONHECIDAS = [
         "palavras_chave": ["estacionamento", "vaga", "garagem", "crachá", "tag", "veículo", "entrada"], 
         "sistema": "Segurança", 
         "resposta": "O acesso às garagens é via crachá funcional. Para novas TAGs, procure a Coordenadoria de Segurança."
-    }
+    },
+    
+    # --- NOVAS ORIENTAÇÕES DE NAVEGADOR E CACHE (ROBUSTEZ) ---
+    {
+        "palavras_chave": ["navegador", "chrome", "edge", "firefox", "limpar", "cache", "cookies", "tela branca", "não carrega", "botão não funciona"], 
+        "sistema": "Geral", 
+        "resposta": "Identifiquei que o problema pode estar relacionado ao navegador. Tente limpar o cache (Ctrl+Shift+Del) ou utilize o Microsoft Edge em modo InPrivate (Ctrl+Shift+N) para garantir que extensões não estejam bloqueando o sistema."
+    },
+    {
+        "palavras_chave": ["pop-up", "bloqueado", "janela não abre", "relatório não sai", "pdf não abre"], 
+        "sistema": "Geral", 
+        "resposta": "Verifique se o seu navegador está bloqueando pop-ups. Na barra de endereços, clique no ícone de 'janela bloqueada' e selecione 'Sempre permitir pop-ups deste site' para que os documentos e relatórios possam abrir corretamente."
+    },
 ]

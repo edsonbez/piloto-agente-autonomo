@@ -2,85 +2,74 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from firebase_config import db
-from firebase_admin import firestore 
-import io
-from datetime import datetime
+from datetime import datetime  # <--- ADICIONADO: Corrige o NameError
 
 def exibir_dashboard():
-    st.markdown("<h1 class='main-title'>Métricas de Eficiência e Auditoria</h1>", unsafe_allow_html=True)
-    
-    try:
-        docs = db.collection('atendimentos_web').order_by('data', direction=firestore.Query.DESCENDING).get()
-        data = [doc.to_dict() for doc in docs]
-    except Exception as e:
-        st.error(f"Erro ao conectar com o banco de dados: {e}")
+    st.title("📊 Painel de Gestão - Agente ALESC")
+
+    # 1. Busca dados do Firebase
+    atendimentos_ref = db.collection('atendimentos_web').stream()
+    monitoramento_ref = db.collection('monitoramento_ia').stream()
+
+    dados_atendimento = [doc.to_dict() for doc in atendimentos_ref]
+    dados_monitoramento = [doc.to_dict() for doc in monitoramento_ref]
+
+    if not dados_atendimento:
+        st.warning("Ainda não há dados de atendimento para exibir.")
         return
 
-    if data:
-        df = pd.DataFrame(data)
-        
-        # KPIs principais
+    df = pd.DataFrame(dados_atendimento)
+    df_monit = pd.DataFrame(dados_monitoramento)
+
+    # --- KPIs PRINCIPAIS ---
+    col1, col2, col3 = st.columns(3)
+    with col1:
         total = len(df)
-        resolvidos = len(df[df.get('resolvido') == True])
-        autonomia = (resolvidos / total) * 100 if total > 0 else 0
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Consultas Totais", total)
-        c2.metric("Resolvidos pelo Agente", resolvidos)
-        c3.metric("Taxa de Autonomia", f"{autonomia:.1f}%")
+        st.metric("Total de Atendimentos", total)
+    with col2:
+        resolvidos = df[df['resolvido'] == True].shape[0]
+        taxa_resolucao = (resolvidos / total) * 100 if total > 0 else 0
+        st.metric("Taxa de Resolução Automática", f"{taxa_resolucao:.1f}%")
+    with col3:
+        gaps = len(df_monit)
+        st.metric("Intervenções da IA", gaps)
 
-        # --- BOTÃO DE EXPORTAÇÃO COM CORREÇÃO DE TIMEZONE ---
-        st.markdown("---")
-        
-        # Prepara o DataFrame para Excel (Remove fuso horário)
-        df_export = df.copy()
-        for col in df_export.columns:
-            if pd.api.types.is_datetime64_any_dtype(df_export[col]) or col == 'data':
-                df_export[col] = pd.to_datetime(df_export[col]).dt.tz_localize(None)
+    st.markdown("---")
 
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_export.to_excel(writer, index=False, sheet_name='Atendimentos')
-        
-        st.download_button(
-            label="📥 Baixar Relatório Completo (Excel)",
-            data=buffer.getvalue(),
-            file_name=f"Relatorio_ALESC_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # --- GRÁFICOS ---
+    c1, c2 = st.columns(2)
 
-        # Área de Gráficos
-        col_graf1, col_graf2 = st.columns(2)
+    with c1:
+        st.subheader("Sistemas com Mais Chamados")
+        fig_sistema = px.pie(df, names='sistema', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+        st.plotly_chart(fig_sistema, width='stretch') # Atualizado conforme aviso do Streamlit
 
-        with col_graf1:
-            st.write("### 🏢 Chamados por Sistema")
-            if 'sistema' in df.columns:
-                fig_pizza = px.pie(df, names='sistema', hole=0.4, 
-                                 color_discrete_sequence=px.colors.qualitative.Pastel)
-                st.plotly_chart(fig_pizza, use_container_width=True)
+    with c2:
+        st.subheader("Top 10 Dúvidas na IA")
+        if not df_monit.empty:
+            top_termos = df_monit['termo_buscado'].value_counts().reset_index()
+            top_termos.columns = ['Termo', 'Frequência']
+            
+            fig_barras = px.bar(top_termos.head(10), x='Frequência', y='Termo', 
+                               orientation='h', color='Frequência', color_continuous_scale='Viridis')
+            st.plotly_chart(fig_barras, width='stretch')
+        else:
+            st.info("Nenhum dado de monitoramento capturado.")
 
-        with col_graf2:
-            st.write("### 📈 Evolução Diária")
-            if 'data' in df.columns:
-                df['data_dia'] = pd.to_datetime(df['data']).dt.date
-                df_evolucao = df.groupby('data_dia').size().reset_index(name='contagem')
-                fig_linha = px.line(df_evolucao, x='data_dia', y='contagem', markers=True)
-                st.plotly_chart(fig_linha, use_container_width=True)
+    # --- TABELA DE DETALHES ---
+    st.markdown("---")
+    st.subheader("📋 Detalhes dos Atendimentos")
+    # Organiza a tabela
+    if 'data' in df.columns:
+        df = df.sort_values(by='data', ascending=False)
+    
+    st.dataframe(df, width='stretch')
 
-        # Auditoria e Oportunidades
-        st.markdown("---")
-        st.write("### 🔍 Oportunidades de Melhoria (Buscas Vazias)")
-        try:
-            vazios_docs = db.collection('buscas_sem_sucesso').order_by('data', direction=firestore.Query.DESCENDING).limit(10).get()
-            if vazios_docs:
-                df_vazios = pd.DataFrame([d.to_dict() for d in vazios_docs])
-                # Limpa data para exibição
-                df_vazios['data'] = pd.to_datetime(df_vazios['data']).dt.strftime('%d/%m %H:%M')
-                st.dataframe(df_vazios[['data', 'usuario', 'relato_original']], use_container_width=True)
-            else:
-                st.success("Nenhuma busca sem resposta registrada.")
-        except:
-            st.info("Coleção de buscas vazias ainda não inicializada.")
-
-    else:
-        st.info("Aguardando os primeiros atendimentos para gerar métricas.")
+    # Botão de Exportação
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Exportar Relatório Completo (CSV)",
+        data=csv,
+        file_name=f"relatorio_alesc_{datetime.now().strftime('%d_%m_%Y')}.csv",
+        mime='text/csv',
+    )
