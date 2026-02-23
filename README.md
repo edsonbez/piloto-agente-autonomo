@@ -4,7 +4,7 @@ Este projeto é um assistente de IA desenvolvido para otimizar o atendimento de 
 
 ## 🚀 Performance Alcançada
 - **Tempo médio de resposta:** ~5.5 segundos.
-- **Modelo:** Google Gemini 1.5 Flash (via LangChain).
+- **Modelo:** Google Gemini Flash Latest (`models/gemini-flash-latest`).
 - **Base de Conhecimento:** RAG (Retrieval-Augmented Generation) com FAISS para busca semântica local.
 
 ## 🛠️ Tecnologias Utilizadas
