@@ -1,76 +1,81 @@
 # 🛡️ Agente Autônomo de Suporte ALESC (V1.5)
 **Ecossistema de Inteligência Artificial para Automação de Suporte Nível 1**
 
-Este projeto representa uma solução de **Inteligência Operacional** desenhada especificamente para a Assembleia Legislativa de Santa Catarina. Ele utiliza uma arquitetura de ponta para converter a base de conhecimento técnica em um agente autônomo, garantindo que o suporte seja ágil, organizado e auditável.
-
-## 🚀 Performance e Métricas de Sucesso
-- **Latência de Resposta:** Média de **~5.5 segundos**.
-- **Confiabilidade:** Arquitetura RAG que elimina "alucinações" ao restringir a IA à base de conhecimento oficial.
-- **Modelo Core:** Google Gemini Flash Latest (`models/gemini-flash-latest`).
-- **Disponibilidade:** Operação 24/7 com transbordo inteligente para suporte humano.
+Este projeto é uma solução de **Inteligência Operacional** desenvolvida para a Assembleia Legislativa de Santa Catarina (ALESC). Ele atua como uma primeira camada de suporte inteligente, capaz de interpretar dúvidas dos servidores e fornecer soluções técnicas instantâneas para sistemas críticos (SGP, Tokens, Assinatura Digital).
 
 ---
 
-## 🏗️ Arquitetura de Engenharia de Software
-O sistema é fundamentado no padrão **RAG (Retrieval-Augmented Generation)**, separando a lógica de processamento da base de dados para garantir escalabilidade e manutenção simplificada.
+## 1. Visão Estratégica e Modelo de Negócio
+O Agente Autônomo não "chuta" respostas; ele utiliza a técnica avançada **RAG (Retrieval-Augmented Generation)** para consultar manuais oficiais antes de interagir.
 
-### 1. Fluxo de Interação e Sequência
-O fluxo detalha a jornada da informação: desde a entrada do dado pelo servidor até a persistência final no Firebase para auditoria e gestão.
+### 🚀 Performance e Eficiência
+- **Tempo Médio de Resposta:** ~5.5 segundos.
+- **Protocolo:** Modo REST para máxima estabilidade em redes corporativas.
+- **Limite de Resposta:** 800 tokens (respostas diretas e sem "enrolação").
+- **Modelo Core:** Google Gemini Flash Latest (Versão 2026).
 
+---
 
+## 2. Arquitetura do Sistema (Componentes)
 
-### 2. Pipeline de Inteligência (Engine RAG)
-O motor utiliza **Embeddings** para busca semântica, permitindo que o Agente compreenda a intenção do usuário em vez de apenas comparar palavras isoladas.
-1. **Extração de Contexto:** Uso de **FAISS** para localização ultrarrápida de soluções.
-2. **Aumentação de Contexto:** Injeção das regras de negócio no prompt da LLM.
-3. **Persistência de Dados:** Registro imutável de cada interação para governança técnica.
+O sistema é sustentado por três pilares tecnológicos que garantem inteligência e rastreabilidade:
+
+1. **O Cérebro (Google Gemini Flash):** Responsável por processar a linguagem natural e transformar manuais técnicos em conversas amigáveis e organizadas.
+2. **A Biblioteca Digital (FAISS - Busca Semântica):** Converte manuais em "vetores" (coordenadas numéricas). Isso permite que o sistema entenda o **sentido** da pergunta, mesmo que o usuário use palavras diferentes das do manual.
+3. **O Cartório de Registros (Google Firebase):** Cada interação é gravada em nuvem, permitindo auditoria, monitoramento de desempenho e geração de dados para a gestão de TI.
 
 
 
 ---
 
-## 📋 Modelo de Negócio e Casos de Uso
-O projeto foi estruturado para atender aos requisitos de governança pública, com atores e processos claramente definidos.
+## 3. Fluxo de Funcionamento e Casos de Uso
 
-### Atores e Matriz de Responsabilidade
-* **Servidor (Usuário):** Busca autonomia para resolver incidentes técnicos (SGP, Senhas, Drivers).
-* **Agente IA (Nível 1):** Orquestra a resposta técnica baseada na base de conhecimento.
-* **Técnico N2 (Suporte Humano):** Intervém via protocolo quando a complexidade excede a base da IA.
-* **Gestor de TI (Auditor):** Monitora KPIs de resolução e identifica lacunas de conhecimento no Dashboard.
+### Ciclo de Atendimento
+1. **Pergunta:** O servidor relata o problema (ex: "SGP não reconhece meu certificado").
+2. **Recuperação:** O sistema busca na base local a solução técnica específica.
+3. **Síntese:** A IA recebe o dado bruto e o organiza em um passo a passo.
+4. **Resposta:** O usuário recebe a solução e valida a eficácia.
+5. **Registro:** O log é salvo no Firebase com status (✅/❌) e tempo de processamento.
 
 
 
-### Casos de Uso Críticos
-- **UC01 - Resolução Autônoma:** O servidor encontra a solução e valida o sucesso (✅).
-- **UC02 - Escalabilidade Técnica:** A IA falha, gera um protocolo de atendimento e salva o log contextual para o técnico humano.
-- **UC03 - Auditoria de Business Intelligence:** O Gestor mapeia sistemas com maior índice de erros para melhorias preventivas.
+### Atores e Governança
+- **Servidor:** O solicitante que busca autonomia.
+- **Técnico N2:** Intervém apenas quando o Agente gera um protocolo de transbordo.
+- **Gestor de TI:** Utiliza o Dashboard para identificar lacunas de conhecimento e gargalos nos sistemas.
+
+
 
 ---
 
-## 🛠️ Tecnologias e Modelo de Dados
-A persistência foi desenhada para ser compatível com ferramentas de Analytics e auditoria forense de chamados.
+## 4. Segurança e Governança
+- **Privacidade:** O sistema não envia dados sensíveis ou pessoais para treinamento da IA. Apenas a dúvida técnica é processada.
+- **Independência:** A base de conhecimento é local. Alterações em manuais são refletidas instantaneamente sem necessidade de novo treinamento do modelo.
 
 ### Modelo de Dados (Schema Firestore)
-| Campo | Descrição Técnica | Função no BI |
+| Campo | Descrição | Importância |
 | :--- | :--- | :--- |
-| **usuario** | Nome/ID do Servidor | Rastreabilidade do solicitante. |
-| **relato** | Input bruto do problema | Análise de tendências e falhas comuns. |
-| **resposta** | Solução gerada pela IA | Auditoria de qualidade e precisão. |
-| **sistema** | Classificador automático | Identificação de gargalos por software. |
-| **resolvido** | Indicador binário (KPI) | Métrica principal de eficácia da IA. |
-| **protocolo** | Chave única de transbordo | Integração com sistema de chamados. |
-
-
+| `usuario` | Nome do Servidor | Rastreabilidade. |
+| `relato` | Dúvida original | Análise de tendências de suporte. |
+| `resposta` | Solução da IA | Auditoria de qualidade. |
+| `sistema` | Tag de Software | Mapeamento de gargalos (ex: SGP). |
+| `resolvido` | Status ✅/❌ | KPI de eficiência da automação. |
 
 ---
 
-## ⚙️ Instalação e Manutenção
-1. **Configuração Inicial:**
-   - Clone o repositório.
-   - Crie um arquivo `.env` com sua `GOOGLE_API_KEY`.
-   - Adicione o arquivo JSON de credenciais do Firebase na raiz do projeto.
-2. **Dependências:** Execute `pip install -r requirements.txt` (Ambiente Python 3.9 recomendado).
-3. **Execução:** Utilize o comando `streamlit run app.py`.
+## 5. Glossário para Gestores
+- **LLM:** O motor de inteligência que permite a conversa fluida.
+- **Token:** Unidade de medida de texto (aproximadamente uma sílaba).
+- **Prompt:** Comando dado à IA para definir seu comportamento e limites.
+- **Interface Streamlit:** A página web onde ocorre a interação com o servidor.
 
-### Ciclo de Manutenção Ágil
-Para evoluir o conhecimento da IA, não é necessário alterar o código-fonte. Basta atualizar o arquivo `base_conhecimento.py` com os novos procedimentos técnicos. O Agente reindexará as informações automaticamente no próximo carregamento, seguindo os princípios de **metodologia ágil**.
+---
+
+## ⚙️ Instalação e Manutenção Ágil
+1. Clone o repositório.
+2. Configure o arquivo `.env` com a `GOOGLE_API_KEY`.
+3. Adicione as credenciais do Firebase na raiz.
+4. Execute: `pip install -r requirements.txt`.
+5. Inicie: `streamlit run app.py`.
+
+**Nota de Manutenção:** Para atualizar a IA, basta editar o arquivo `base_conhecimento.py`. O sistema utiliza Metodologias Ágeis para garantir que a atualização seja instantânea.
