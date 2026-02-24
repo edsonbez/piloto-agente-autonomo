@@ -1,10 +1,11 @@
 from firebase_config import db
 from datetime import datetime
 
-def registrar_atendimento(nome, relato, sistema, resolvido, protocolo=None):
+def registrar_atendimento(nome, relato, sistema, resolvido, protocolo=None, resposta=None):
     dados = {
-        'servidor': nome,
-        'problema': relato,
+        'usuario': nome,
+        'relato': relato,
+        'resposta': resposta, # <--- Agora o 'None' vai virar o texto da IA
         'sistema': sistema,
         'resolvido': resolvido,
         'data': datetime.now()

@@ -46,13 +46,12 @@ def exibir_dashboard():
         if 'sistema' in df.columns:
             fig_sistema = px.pie(df, names='sistema', hole=0.4, 
                                  color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig_sistema, use_container_width=True)
+            st.plotly_chart(fig_sistema, config={'responsive': True})
         else:
             st.info("Coluna 'sistema' não encontrada nos dados.")
 
     with c2:
         st.subheader("Volume por Sistema (Gráfico de Barras)")
-        # AJUSTE AQUI: Em vez de mostrar a frase (termo), mostramos o SISTEMA agrupado
         if 'sistema' in df.columns:
             contagem_sistema = df['sistema'].value_counts().reset_index()
             contagem_sistema.columns = ['Sistema', 'Qtd']
@@ -63,24 +62,49 @@ def exibir_dashboard():
                                 color_continuous_scale='Blues',
                                 labels={'Qtd': 'Nº de Atendimentos'})
             
-            # Ajuste de layout para evitar nomes cortados
             fig_barras.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_barras, use_container_width=True)
+            # AJUSTADO: Usando width='stretch' para evitar o aviso de 2026
+            st.plotly_chart(fig_barras, config={'responsive': True}) 
         else:
-            st.info("Dados de sistemas insuficientes para gerar barras.")
+            st.info("Dados de sistemas insuficientes.")
 
-    # --- TABELA DE DETALHES ---
+    # --- TABELA DE DETALHES TURBINADA ---
     st.markdown("---")
-    st.subheader("📋 Detalhes dos Atendimentos")
+    st.subheader("📋 Auditoria de Atendimentos Detalhada") # Título único e claro
     
-    # Organiza a tabela pela data se existir
     if 'data' in df.columns:
+        df['data'] = pd.to_datetime(df['data'], errors='coerce')
         df = df.sort_values(by='data', ascending=False)
-    
-    # Selecionamos apenas colunas úteis para a tabela não ficar gigante
-    colunas_exibir = [c for c in ['data', 'usuario', 'sistema', 'relato', 'resolvido'] if c in df.columns]
-    st.dataframe(df[colunas_exibir], use_container_width=True)
+        df['data_exibicao'] = df['data'].dt.strftime('%d/%m/%Y %H:%M')
+    else:
+        df['data_exibicao'] = "N/A"
 
+    if 'resolvido' in df.columns:
+        df['resolvido_ícone'] = df['resolvido'].apply(lambda x: "✅" if x == True else "❌")
+
+    colunas_auditoria = ['data_exibicao', 'sistema', 'relato', 'resposta', 'resolvido_ícone']
+    colunas_finais = [c for c in colunas_auditoria if c in df.columns]
+    
+    st.dataframe(
+        df[colunas_finais], 
+        width='stretch', # Ajustado para o padrão 2026
+        column_config={
+            "relato": st.column_config.TextColumn(
+                "Pergunta do Usuário", 
+                help="O que o usuário escreveu no chat",
+                width="medium"
+            ),
+            "resposta": st.column_config.TextColumn(
+                "Solução Entregue", 
+                help="A resposta completa enviada pela IA",
+                width="large"
+            ),
+            "data_exibicao": "Data/Hora",
+            "sistema": "Sistema",
+            "resolvido_ícone": "Status"
+        },
+        hide_index=True
+    )
     # Botão de Exportação
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
