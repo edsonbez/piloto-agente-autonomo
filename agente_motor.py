@@ -1,83 +1,131 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
-from base_conhecimento import SOLUCOES_CONHECIDAS
+from logica_busca import buscar_contexto_ia
+from database import execute_query 
 import os
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 import time
 
 # Forçando o modo REST para evitar latência
 os.environ["transport"] = "rest" 
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 
-# Inicialização segura do Firebase
-if not firebase_admin._apps:
-    cred = credentials.Certificate("agente-helpdesk-piloto-firebase-adminsdk-fbsvc-85954069f2.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
-
 class MotorIA:
     def __init__(self):
-        # 1. Base de conhecimento para o FAISS
-        self.documentos = [
-            Document(
-                page_content=f"Sistema: {item['sistema']}. Problema: {' '.join(item['palavras_chave'])}. Resposta: {item['resposta']}",
-                metadata={"sistema": item['sistema'], "resposta": item['resposta']}
-            ) for item in SOLUCOES_CONHECIDAS
-        ]
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-        self.vectorstore = FAISS.from_documents(self.documentos, self.embeddings)
-        
-        # 2. Configuração do Modelo (Gemini Flash)
+        # Configuração do Modelo (Gemini Flash)
         self.llm = ChatGoogleGenerativeAI(
             model="models/gemini-flash-latest", 
             temperature=0.1,
-            max_output_tokens=800,
-            max_retries=0, 
+            max_output_tokens=2000, 
             transport="rest" 
         )
+        # Garante que a pasta de logs existe
+        self.log_dir = os.path.join("data", "logs")
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+
+    def salvar_log_local(self, usuario, relato, resposta, tempo_exec):
+        """Salva a interação em um arquivo JSON local para auditoria."""
+        log_path = os.path.join(self.log_dir, "atendimentos.json")
+        novo_log = {
+            "timestamp": datetime.now().isoformat(),
+            "usuario": usuario,
+            "pergunta": relato,
+            "resposta": resposta,
+            "performance_segundos": round(tempo_exec, 2)
+        }
+        
+        try:
+            logs = []
+            if os.path.exists(log_path):
+                with open(log_path, 'r', encoding='utf-8') as f:
+                    try:
+                        logs = json.load(f)
+                    except json.JSONDecodeError:
+                        logs = []
+            
+            logs.append(novo_log)
+            
+            with open(log_path, 'w', encoding='utf-8') as f:
+                json.dump(logs, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar log local: {e}")
+
+    def buscar_conhecimento_otrs(self, relato):
+        """Busca refinada no banco para casos específicos."""
+        try:
+            stopwords = ['estou', 'está', 'fazer', 'problema', 'preciso', 'ajuda']
+            relato_limpo = relato.lower()
+            for char in ".,?!:;()":
+                relato_limpo = relato_limpo.replace(char, "")
+            
+            palavras = [p for p in relato_limpo.split() if len(p) > 3 and p not in stopwords]
+            if not palavras: palavras = relato_limpo.split()[:2]
+
+            filtros = " OR ".join(["t.title LIKE %s OR adm.a_body LIKE %s" for _ in palavras])
+            query = f"""
+            SELECT t.title, CAST(LEFT(adm.a_body, 800) AS CHAR) as a_body 
+            FROM ticket t
+            JOIN article a ON t.id = a.ticket_id
+            JOIN article_data_mime adm ON a.id = adm.article_id
+            WHERE ({filtros}) AND t.ticket_state_id IN (2, 3)
+            ORDER BY t.create_time DESC LIMIT 5
+            """
+            
+            params = []
+            for p in palavras:
+                params.extend([f"%{p}%", f"%{p}%"])
+                
+            resultados = execute_query(query, tuple(params))
+            if not resultados: return "Nenhum histórico específico encontrado."
+                
+            contexto = ""
+            for res in resultados:
+                titulo = str(res.get('title', 'Sem Título'))
+                corpo = str(res.get('a_body', 'Sem Conteúdo')).replace('\n', ' ').strip()
+                contexto += f"\n[HISTÓRICO REAL ALESC]\nAssunto: {titulo}\nSolução: {corpo[:500]}\n"
+            return contexto
+        except Exception as e:
+            print(f"⚠️ Erro ao acessar banco: {e}")
+            return "Erro técnico ao acessar o histórico."
 
     def processar_atendimento_stream(self, usuario, relato, historico=""):
         inicio_atendimento = time.time()
-        
-        # Busca Semântica
-        docs = self.vectorstore.similarity_search(relato, k=1)
-        contexto = docs[0].page_content if docs else "Geral"
+        contexto_real = buscar_contexto_ia(relato)
         
         prompt_final = (
-            f"Aja como suporte técnico nível 2. Use o CONTEXTO: {contexto}\n"
-            f"PERGUNTA: {relato}\n"
-            f"INSTRUÇÃO: Vá DIRETO AOS PASSOS TÉCNICOS. Sem saudações."
+            f"Você é o Assistente Técnico de TI da ALESC.\n"
+            f"Responda ESTRITAMENTE baseando-se no histórico abaixo.\n\n"
+            f"--- HISTÓRICO REAL OTRS ---\n{contexto_real}\n\n"
+            f"USUÁRIO: {usuario}\nPROBLEMA: {relato}\n\n"
+            f"DIRETRIZES: 1. Anonimize nomes e gabinetes. 2. Use 'unidade administrativa'. 3. Sistema oficial é SEI. 4. Se não for TI, direcione para o setor correto."
         )
         
         try:
-            print("📡 Solicitando resposta ao Google...")
+            print("📡 Solicitando resposta ao Gemini...")
             resposta = self.llm.invoke(prompt_final)
-            full_response = getattr(resposta, 'content', str(resposta))
-            full_response = full_response.replace("content=", "").strip("'\"")
-            yield full_response
+            full_response = getattr(resposta, 'content', str(resposta)).strip()
+            
+            # Salva o log localmente antes de terminar
+            tempo_total = time.time() - inicio_atendimento
+            self.salvar_log_local(usuario, relato, full_response, tempo_total)
+            
+            # ADICIONE ESTA LINHA ABAIXO PARA VOLTAR A VER NO TERMINAL:
+            print(f"📊 PERFORMANCE | Total: {tempo_total:.2f}s")
 
+            yield full_response
         except Exception as e:
             print(f"❌ Erro na IA: {str(e)}")
-            yield f"\n⚠️ Ocorreu um erro na comunicação. Tente novamente."
+            yield "⚠️ Ocorreu um erro na comunicação. Tente novamente."
 
-        tempo_final_calculado = time.time() - inicio_atendimento
-        print(f"📊 PERFORMANCE | Total: {tempo_final_calculado:.2f}s")
-
-# Instância global
-try:
-    agente = MotorIA()
-except Exception as e:
-    agente = None
+agente = MotorIA()
 
 def consultar_ia_stream(usuario, relato, historico=""):
     if agente:
         for resposta_parcial in agente.processar_atendimento_stream(usuario, relato, historico):
-            if resposta_parcial:
-                yield resposta_parcial
+            yield resposta_parcial
     else:
         yield "❌ Sistema de IA indisponível."

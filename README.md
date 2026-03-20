@@ -1,81 +1,52 @@
-# 🛡️ Agente Autônomo de Suporte ALESC (V1.5)
-**Ecossistema de Inteligência Artificial para Automação de Suporte Nível 1**
+# 🚀 Projeto: Agente de IA para Suporte Técnico (ALESC)
 
-Este projeto é uma solução de **Inteligência Operacional** desenvolvida para a Assembleia Legislativa de Santa Catarina (ALESC). Ele atua como uma primeira camada de suporte inteligente, capaz de interpretar dúvidas dos servidores e fornecer soluções técnicas instantâneas para sistemas críticos (SGP, Tokens, Assinatura Digital).
+Este documento detalha a arquitetura, as tecnologias e a metodologia de **MLOps** aplicadas no desenvolvimento do Agente de Suporte Baseado em IA, projetado para otimizar o atendimento técnico da Assembleia Legislativa de Santa Catarina.
 
----
+## 1. Escopo e Objetivo
+Transformar uma base bruta de **50.000+ tickets do OTRS** em uma interface de linguagem natural capaz de fornecer diagnósticos precisos, soluções históricas e orientações de governança (SEI, Hardware, Redes) para o corpo técnico da ALESC, garantindo 100% de privacidade institucional.
 
-## 1. Visão Estratégica e Modelo de Negócio
-O Agente Autônomo não "chuta" respostas; ele utiliza a técnica avançada **RAG (Retrieval-Augmented Generation)** para consultar manuais oficiais antes de interagir.
+## 2. Stack Tecnológica Atualizada
 
-### 🚀 Performance e Eficiência
-- **Tempo Médio de Resposta:** ~5.5 segundos.
-- **Protocolo:** Modo REST para máxima estabilidade em redes corporativas.
-- **Limite de Resposta:** 800 tokens (respostas diretas e sem "enrolação").
-- **Modelo Core:** Google Gemini Flash Latest (Versão 2026).
+### Core e Interface
+* **Linguagem:** Python 3.10+ (Ambiente Dockerizado).
+* **Interface Web:** Streamlit (UI otimizada para produtividade).
+* **Infraestrutura:** Docker & Docker Swarm (Orquestração de containers).
 
----
+### Inteligência Artificial e RAG
+* **LLM:** Google Gemini 3 Flash (Alta performance e baixa latência via REST).
+* **Embeddings:** `paraphrase-multilingual-MiniLM-L12-v2` (SBERT).
+* **Busca Vetorial:** FAISS (Facebook AI Similarity Search) com busca por proximidade de cosseno.
 
-## 2. Arquitetura do Sistema (Componentes)
-
-O sistema é sustentado por três pilares tecnológicos que garantem inteligência e rastreabilidade:
-
-1. **O Cérebro (Google Gemini Flash):** Responsável por processar a linguagem natural e transformar manuais técnicos em conversas amigáveis e organizadas.
-2. **A Biblioteca Digital (FAISS - Busca Semântica):** Converte manuais em "vetores" (coordenadas numéricas). Isso permite que o sistema entenda o **sentido** da pergunta, mesmo que o usuário use palavras diferentes das do manual.
-3. **O Cartório de Registros (Google Firebase):** Cada interação é gravada em nuvem, permitindo auditoria, monitoramento de desempenho e geração de dados para a gestão de TI.
-
-
+### Persistência e Auditoria (On-Premise)
+* **Banco de Dados:** MySQL/MariaDB (Origem dos dados OTRS).
+* **Logs de Auditoria:** JSON Local (Persistência em volume para conformidade com a LGPD, eliminando dependência de nuvem externa para logs).
 
 ---
 
-## 3. Fluxo de Funcionamento e Casos de Uso
+## 🏗️ 3. Arquitetura do Sistema (MLOps Incremental)
 
-### Ciclo de Atendimento
-1. **Pergunta:** O servidor relata o problema (ex: "SGP não reconhece meu certificado").
-2. **Recuperação:** O sistema busca na base local a solução técnica específica.
-3. **Síntese:** A IA recebe o dado bruto e o organiza em um passo a passo.
-4. **Resposta:** O usuário recebe a solução e valida a eficácia.
-5. **Registro:** O log é salvo no Firebase com status (✅/❌) e tempo de processamento.
+O sistema utiliza a arquitetura **Retrieval-Augmented Generation (RAG)** com um pipeline de dados vivo:
 
-
-
-### Atores e Governança
-- **Servidor:** O solicitante que busca autonomia.
-- **Técnico N2:** Intervém apenas quando o Agente gera um protocolo de transbordo.
-- **Gestor de TI:** Utiliza o Dashboard para identificar lacunas de conhecimento e gargalos nos sistemas.
-
-
+1. **Ingestão Incremental:** O script de manutenção identifica apenas os novos chamados no OTRS e os adiciona ao índice existente, economizando recursos e tokens.
+2. **Recuperação (Retrieval):** Localiza instantaneamente os precedentes técnicos mais relevantes no volume de dados.
+3. **Geração (Generation):** A IA processa o contexto recuperado sob temperatura **0.1**, garantindo respostas técnicas fiéis ao histórico da ALESC.
 
 ---
 
-## 4. Segurança e Governança
-- **Privacidade:** O sistema não envia dados sensíveis ou pessoais para treinamento da IA. Apenas a dúvida técnica é processada.
-- **Independência:** A base de conhecimento é local. Alterações em manuais são refletidas instantaneamente sem necessidade de novo treinamento do modelo.
+## 📂 4. Estrutura de Diretórios (Padrão de Produção)
 
-### Modelo de Dados (Schema Firestore)
-| Campo | Descrição | Importância |
-| :--- | :--- | :--- |
-| `usuario` | Nome do Servidor | Rastreabilidade. |
-| `relato` | Dúvida original | Análise de tendências de suporte. |
-| `resposta` | Solução da IA | Auditoria de qualidade. |
-| `sistema` | Tag de Software | Mapeamento de gargalos (ex: SGP). |
-| `resolvido` | Status ✅/❌ | KPI de eficiência da automação. |
-
----
-
-## 5. Glossário para Gestores
-- **LLM:** O motor de inteligência que permite a conversa fluida.
-- **Token:** Unidade de medida de texto (aproximadamente uma sílaba).
-- **Prompt:** Comando dado à IA para definir seu comportamento e limites.
-- **Interface Streamlit:** A página web onde ocorre a interação com o servidor.
-
----
-
-## ⚙️ Instalação e Manutenção Ágil
-1. Clone o repositório.
-2. Configure o arquivo `.env` com a `GOOGLE_API_KEY`.
-3. Adicione as credenciais do Firebase na raiz.
-4. Execute: `pip install -r requirements.txt`.
-5. Inicie: `streamlit run app.py`.
-
-**Nota de Manutenção:** Para atualizar a IA, basta editar o arquivo `base_conhecimento.py`. O sistema utiliza Metodologias Ágeis para garantir que a atualização seja instantânea.
+```text
+/PROJETO_IA_ALESC
+├── app.py                # Interface Streamlit
+├── agente_motor.py       # Lógica da IA e Gravação de Logs
+├── logica_busca.py       # Motor de busca semântica FAISS
+├── database.py           # Driver de conexão MySQL
+├── /data                 # VOLUME PERSISTENTE (HD Externo do Container)
+│   ├── otrs_conhecimento.index
+│   ├── otrs_mapping.csv
+│   └── /logs             # Auditoria local (atendimentos.json)
+├── /scripts              # Manutenção e Automação
+│   └── indexador_otrs.py # Pipeline de atualização incremental
+├── /assets               # Identidade visual (CSS)
+├── Dockerfile            # Receita da imagem oficial
+└── DEPLOY.md             # Manual técnico de implantação e Swarm

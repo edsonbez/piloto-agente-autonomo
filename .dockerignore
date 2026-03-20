@@ -1,0 +1,25 @@
+# --- AMBIENTE E DADOS (Volume Externo) ---
+# Ignoramos a pasta data e venv para não inflar a imagem
+venv/
+.venv/
+data/
+*.index
+*.csv
+.env
+
+# --- ARQUIVOS DE TESTE QUE SOBRARAM ---
+# Deixamos apenas o padrão dos arquivos que ainda vejo na sua lista
+test_*.py
+teste_*.py
+
+# --- CACHE E LOGS DE SISTEMA ---
+__pycache__/
+*.pyc
+.vscode/
+.git/
+.gitignore
+
+# --- SEGURANÇA ---
+# Proteção extra: bloqueia qualquer arquivo JSON (caso você crie novos testes)
+# Nota: O atendimentos.json não é afetado pois está dentro de /data (volume)
+*.json

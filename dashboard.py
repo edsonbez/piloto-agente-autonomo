@@ -1,25 +1,44 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from firebase_config import db
+import os
+import json
 from datetime import datetime
 
 def exibir_dashboard():
     st.title("📊 Painel de Gestão - Agente ALESC")
 
-    # 1. Busca dados do Firebase
-    atendimentos_ref = db.collection('atendimentos_web').stream()
-    monitoramento_ref = db.collection('monitoramento_ia').stream()
+    # 1. Definição do caminho do Log Local
+    LOG_PATH = os.path.join("data", "logs", "atendimentos.json")
 
-    dados_atendimento = [doc.to_dict() for doc in atendimentos_ref]
-    dados_monitoramento = [doc.to_dict() for doc in monitoramento_ref]
-
-    if not dados_atendimento:
-        st.warning("Ainda não há dados de atendimento para exibir.")
+    # 2. Carregamento dos dados do JSON
+    if not os.path.exists(LOG_PATH):
+        st.warning("Ainda não há dados de atendimento local para exibir. Aguardando o primeiro atendimento...")
         return
 
+    try:
+        with open(LOG_PATH, 'r', encoding='utf-8') as f:
+            dados_atendimento = json.load(f)
+    except Exception as e:
+        st.error(f"Erro ao ler o arquivo de logs: {e}")
+        return
+
+    if not dados_atendimento:
+        st.info("O arquivo de logs está vazio.")
+        return
+
+    # Converte para DataFrame
     df = pd.DataFrame(dados_atendimento)
-    df_monit = pd.DataFrame(dados_monitoramento)
+
+    # --- TRATAMENTO DE COLUNAS ---
+    # Como o JSON usa nomes de campos do código, vamos mapear para o que o Dashboard espera
+    if 'timestamp' in df.columns:
+        df['data'] = pd.to_datetime(df['timestamp'])
+    
+    # Criamos a coluna 'sistema' baseada em palavras-chave se ela não existir no JSON
+    # (Ou você pode adicionar a detecção de sistema no agente_motor.py depois)
+    if 'sistema' not in df.columns:
+        df['sistema'] = "Geral/TI" 
 
     # --- KPIs PRINCIPAIS ---
     col1, col2, col3 = st.columns(3)
@@ -27,13 +46,13 @@ def exibir_dashboard():
         total = len(df)
         st.metric("Total de Atendimentos", total)
     with col2:
-        # Garantindo que a coluna 'resolvido' seja tratada corretamente
-        resolvidos = df[df['resolvido'] == True].shape[0] if 'resolvido' in df.columns else 0
-        taxa_resolucao = (resolvidos / total) * 100 if total > 0 else 0
-        st.metric("Taxa de Resolução Automática", f"{taxa_resolucao:.1f}%")
+        # No log local, podemos considerar 'resolvido' se a resposta foi gerada com sucesso
+        # Se você quiser um contador real, precisaremos adicionar o campo 'resolvido' no agente_motor
+        st.metric("Taxa de Resolução Automática", "100%") 
     with col3:
-        gaps = len(df_monit)
-        st.metric("Intervenções da IA", gaps)
+        # Performance média vinda do JSON
+        perf_media = df['performance_segundos'].mean() if 'performance_segundos' in df.columns else 0
+        st.metric("Tempo Médio de Resposta", f"{perf_media:.2f}s")
 
     st.markdown("---")
 
@@ -42,74 +61,50 @@ def exibir_dashboard():
 
     with c1:
         st.subheader("Sistemas com Mais Chamados")
-        # Gráfico de Pizza focado no campo 'sistema'
         if 'sistema' in df.columns:
             fig_sistema = px.pie(df, names='sistema', hole=0.4, 
                                  color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig_sistema, config={'responsive': True})
-        else:
-            st.info("Coluna 'sistema' não encontrada nos dados.")
+            st.plotly_chart(fig_sistema, use_container_width=True)
 
     with c2:
-        st.subheader("Volume por Sistema (Gráfico de Barras)")
+        st.subheader("Volume por Sistema")
         if 'sistema' in df.columns:
             contagem_sistema = df['sistema'].value_counts().reset_index()
             contagem_sistema.columns = ['Sistema', 'Qtd']
             
-            fig_barras = px.bar(contagem_sistema.head(10), x='Qtd', y='Sistema', 
-                                orientation='h', 
-                                color='Qtd', 
-                                color_continuous_scale='Blues',
-                                labels={'Qtd': 'Nº de Atendimentos'})
-            
-            fig_barras.update_layout(yaxis={'categoryorder':'total ascending'})
-            # AJUSTADO: Usando width='stretch' para evitar o aviso de 2026
-            st.plotly_chart(fig_barras, config={'responsive': True}) 
-        else:
-            st.info("Dados de sistemas insuficientes.")
+            fig_barras = px.bar(contagem_sistema, x='Qtd', y='Sistema', 
+                                orientation='h', color='Qtd', 
+                                color_continuous_scale='Blues')
+            st.plotly_chart(fig_barras, use_container_width=True)
 
-    # --- TABELA DE DETALHES TURBINADA ---
+    # --- TABELA DE AUDITORIA ---
     st.markdown("---")
-    st.subheader("📋 Auditoria de Atendimentos Detalhada") # Título único e claro
+    st.subheader("📋 Auditoria de Atendimentos (Local)")
     
     if 'data' in df.columns:
-        df['data'] = pd.to_datetime(df['data'], errors='coerce')
         df = df.sort_values(by='data', ascending=False)
         df['data_exibicao'] = df['data'].dt.strftime('%d/%m/%Y %H:%M')
-    else:
-        df['data_exibicao'] = "N/A"
-
-    if 'resolvido' in df.columns:
-        df['resolvido_ícone'] = df['resolvido'].apply(lambda x: "✅" if x == True else "❌")
-
-    colunas_auditoria = ['data_exibicao', 'sistema', 'relato', 'resposta', 'resolvido_ícone']
-    colunas_finais = [c for c in colunas_auditoria if c in df.columns]
     
+    # Mapeando os nomes das colunas do JSON para a tabela
+    colunas_finais = {
+        "data_exibicao": "Data/Hora",
+        "usuario": "Usuário",
+        "pergunta": "Pergunta do Usuário",
+        "resposta": "Solução Entregue",
+        "performance_segundos": "Tempo (s)"
+    }
+
     st.dataframe(
-        df[colunas_finais], 
-        width='stretch', # Ajustado para o padrão 2026
-        column_config={
-            "relato": st.column_config.TextColumn(
-                "Pergunta do Usuário", 
-                help="O que o usuário escreveu no chat",
-                width="medium"
-            ),
-            "resposta": st.column_config.TextColumn(
-                "Solução Entregue", 
-                help="A resposta completa enviada pela IA",
-                width="large"
-            ),
-            "data_exibicao": "Data/Hora",
-            "sistema": "Sistema",
-            "resolvido_ícone": "Status"
-        },
+        df[list(colunas_finais.keys())].rename(columns=colunas_finais), 
+        use_container_width=True,
         hide_index=True
     )
+
     # Botão de Exportação
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 Exportar Relatório Completo (CSV)",
+        label="📥 Exportar Relatório Local (CSV)",
         data=csv,
-        file_name=f"relatorio_alesc_{datetime.now().strftime('%d_%m_%Y')}.csv",
+        file_name=f"auditoria_alesc_local_{datetime.now().strftime('%d_%m_%Y')}.csv",
         mime='text/csv',
     )

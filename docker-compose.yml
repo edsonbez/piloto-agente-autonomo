@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  agente-ti-alesc:
+    build: .
+    image: agente-ti-alesc:latest
+    container_name: agente_ia_prod
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - /opt/alesc/agente_ia/data:/app/data  # Mapeia toda a pasta data (incluindo logs)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    restart: always

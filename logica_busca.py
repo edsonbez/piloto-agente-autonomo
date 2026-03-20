@@ -1,67 +1,61 @@
-from thefuzz import fuzz
-from base_conhecimento import SOLUCOES_CONHECIDAS
-import unicodedata
-import re
+import faiss
+import pandas as pd
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import os
 
-def normalizar_texto(texto):
-    if not texto: return ""
-    texto = "".join(ch for ch in unicodedata.normalize('NFKD', texto) 
-                    if unicodedata.category(ch) != 'Mn')
-    return texto.lower().strip()
+# Configuração de Caminhos Dinâmicos
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+INDEX_PATH = os.path.join(DATA_DIR, "otrs_conhecimento.index")
+MAPPING_PATH = os.path.join(DATA_DIR, "otrs_mapping.csv")
 
-def detectar_urgencia(texto):
-    palavras_alerta = ["urgente", "prioridade", "parado", "critico", "emergencia"]
-    texto_norm = normalizar_texto(texto)
-    return any(p in texto_norm for p in palavras_alerta)
+print("🧠 Carregando cérebro semântico...")
+model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+# Carregamento Seguro
+index = None
+df_mapping = None
+
+if os.path.exists(INDEX_PATH) and os.path.exists(MAPPING_PATH):
+    index = faiss.read_index(INDEX_PATH)
+    df_mapping = pd.read_csv(MAPPING_PATH)
+    print(f"✅ Biblioteca Digital carregada de: {DATA_DIR}")
+else:
+    print(f"❌ Erro: Arquivos não encontrados em {DATA_DIR}")
+
+def buscar_contexto_ia(pergunta, top_k=5):
+    try:
+        if not pergunta or index is None:
+            return "Sem contexto disponível."
+
+        pergunta_vector = model.encode([pergunta]).astype('float32')
+        distancias, indices = index.search(pergunta_vector, top_k)
+
+        contexto = ""
+        for idx in indices[0]:
+            if idx != -1 and idx < len(df_mapping):
+                row = df_mapping.iloc[idx]
+                titulo = str(row.get('title', 'Sem Título')).strip()
+                corpo = str(row.get('a_body', 'Sem Descrição')).replace('\n', ' ').strip()
+                
+                if titulo.lower() == "title": continue
+                contexto += f"\n[HISTÓRICO REAL ALESC]\nAssunto: {titulo}\nSolução: {corpo[:500]}\n"
+        
+        print(f"✅ DEBUG - Chamados encontrados: {len(contexto.split('[HISTÓRICO')) - 1}")
+        return contexto
+    except Exception as e:
+        print(f"⚠️ Erro na busca semântica: {e}")
+        return ""
+
 
 def verificar_saudacao(texto):
-    saudacoes = ["ola", "oi", "bom dia", "boa tarde", "boa noite", "ajuda"]
-    texto_limpo = normalizar_texto(texto)
-    if any(s in texto_limpo for s in saudacoes) and len(texto_limpo.split()) < 4:
-        return "Olá! Sou o Assistente Virtual da ALESC. Posso ajudar com SGP, RH, Financeiro e TI."
-    return None
+    """Verifica se o usuário apenas deu um 'oi'."""
+    saudacoes = ['oi', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'ajuda']
+    return any(s in texto.lower() for s in saudacoes)
 
-def calcular_pontuacao(relato):
-    lista_pontuada = []
-    texto_usuario = normalizar_texto(relato)
-    palavras_usuario = re.findall(r'\b\w+\b', texto_usuario)
-    urgente = detectar_urgencia(relato)
-
-    for item in SOLUCOES_CONHECIDAS:
-        score = 0
-        sistema = item['sistema'].upper()
-        
-        for kw_orig in item["palavras_chave"]:
-            kw = normalizar_texto(kw_orig)
-            
-            # 1. ÂNCORA DE SIGLA (Peso imbatível)
-            if kw in ["sgp", "rh", "ti", "sigef", "financeiro"]:
-                if kw in palavras_usuario:
-                    score += 5000 
-            
-            # 2. MATCH DE CONTEÚDO (Palavra inteira ou expressão)
-            if kw in palavras_usuario:
-                score += 500 if sistema == "SGP" else 100
-            elif kw in texto_usuario and len(kw.split()) > 1:
-                score += 200 if sistema == "SGP" else 80
-
-            # 3. FUZZY CALIBRADO (Mais elástico: 65%)
-            # Isso vai capturar "axenar" -> "anexar" com folga
-            if len(kw) > 3:
-                for p_usr in palavras_usuario:
-                    if len(p_usr) < 3: continue
-                    ratio = fuzz.ratio(p_usr, kw)
-                    if ratio > 65: # 65% é o ponto ideal para erros grosseiros
-                        score += 400 if sistema == "SGP" else 50
-
-        if score > 0:
-            if urgente: score += 100
-            lista_pontuada.append({"item": item, "score": score, "sistema_nome": sistema})
-
-    # --- FILTRO DE ROBUSTEZ: Nota de corte ---
-    # Só aceita soluções com score relevante (acima de 150)
-    # Isso impede que "receita de bolo" vire um chamado de TI
-    solucoes_relevantes = [m for m in lista_pontuada if m['score'] >= 150]
-
-    # Ordenação final com desempate pró-SGP
-    return [m['item'] for m in sorted(solucoes_relevantes, key=lambda x: (x['score'], x['sistema_nome'] == "SGP"), reverse=True)]
+def calcular_pontuacao(resposta):
+    """Calcula uma pontuação baseada na qualidade da resposta (exemplo simples)."""
+    if len(resposta) > 100:
+        return 100
+    return 50
