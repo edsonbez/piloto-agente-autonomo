@@ -16,6 +16,22 @@ sudo mkdir -p /opt/alesc && cd /opt/alesc
 # 3. Clonar o projeto do repositório oficial
 sudo git clone https://github.com/edsonbez/piloto-agente-autonomo.git agente_ia
 
+---
+
+## ⚠️ PASSO CRUCIAL: Carga da Base de Conhecimento (Offline)
+Os arquivos de inteligência vetorial **não residem no repositório Git** devido ao seu tamanho binário (LFS) e políticas de segurança. 
+
+Antes de iniciar o container, o técnico deve realizar a carga manual:
+
+1. **Arquivos Necessários:** - `otrs_conhecimento.index` (Índice FAISS)
+   - `otrs_mapping.csv` (Base de textos expandida)
+2. **Procedimento:** Copiar ambos os arquivos para a pasta:  
+   `/opt/alesc/agente_ia/data/`
+3. **Permissões:** Garantir que o usuário do Docker consiga ler os arquivos:  
+   `sudo chmod 644 /opt/alesc/agente_ia/data/*`
+
+---
+
 # 4. Entrar na pasta e ajustar permissões para logs e dados
 cd agente_ia
 sudo mkdir -p data/logs
