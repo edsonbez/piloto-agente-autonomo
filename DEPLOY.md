@@ -1,49 +1,87 @@
-# 🚀 Guia de Implantação e MLOps - Agente IA ALESC
+Projeto de agente para atuar no primeiro nível dos chamados
+Versão: 6.0 (Final - Full Spec) | Ambiente: Homologação ALESC
 
-Este documento detalha os requisitos, a arquitetura de containers e a estratégia de **Atualização Contínua e Incremental** para o Agente de Suporte Técnico.
+Responsável Técnico: Edson Bez
 
----
+1. Procedimento de Aquisição do Código (Clonagem e Setup)
+Para iniciar a implantação no servidor de homologação da ALESC, siga a sequência abaixo:
 
-## 📋 1. Ficha Técnica de Infraestrutura
+Bash
+# 1. Navegar para o diretório de aplicações opcionais
+cd /opt
 
-### Requisitos de Hardware (Sizing)
-* **Memória RAM:** Mínimo 1GB | Recomendado 2GB (Reserva para busca vetorial em memória).
-* **CPU:** 1 vCPU (Processamento de IA via API Google Gemini).
-* **Disco:** ~500MB (Imagem Docker) + Espaço para o Volume de Dados (~1GB a 2GB).
+# 2. Criar estrutura de diretórios da ALESC
+sudo mkdir -p /opt/alesc && cd /opt/alesc
 
-### Variáveis de Ambiente (Secrets)
-Configuradas via arquivo `.env` ou Docker Secrets:
-* `GOOGLE_API_KEY`: Chave de autenticação da API Gemini.
+# 3. Clonar o projeto do repositório oficial
+sudo git clone https://github.com/edsonbez/piloto-agente-autonomo.git agente_ia
 
----
+# 4. Entrar na pasta e ajustar permissões para logs e dados
+cd agente_ia
+sudo mkdir -p data/logs
+sudo chmod -R 775 data/logs
+2. Especificações de Recursos (Sizing & Performance)
+Processamento: 2 vCPUs (x86_64).
 
-## 🔄 2. Estratégia de Atualização Incremental (MLOps)
+Memória RAM: 2 GB (Limite do Container) / 4 GB (Recomendado no Host).
 
-Para manter o Agente atualizado com o OTRS sem custos excessivos de API, utilizamos uma abordagem **Incremental**.
+Memória Compartilhada (--shm-size): 2 GB (Obrigatório para o FAISS).
 
-### Fluxo de Funcionamento:
-1. **Identificação:** O script `scripts/indexador_otrs.py` verifica o último ID processado no arquivo `data/otrs_mapping.csv`.
-2. **Vetorização Parcial:** Apenas os chamados novos (`ID > last_id`) são convertidos em embeddings.
-3. **Merge (Hot Reload):** Os novos vetores são adicionados ao índice FAISS em tempo real. Como o container lê os arquivos via **Volume**, ele incorpora o novo conhecimento instantaneamente.
+Armazenamento: 20 GB SSD (Imagem + Base + Logs).
 
----
+Rede Outbound: Porta 443 (HTTPS) para generativelanguage.googleapis.com.
 
-## 🐳 3. Arquitetura de Containers (Docker & Swarm)
+Rede Inbound: Porta 8501 (TCP) para rede interna.
 
-### Estratégia de Volumes
-Fundamental para persistência da base de conhecimento e dos logs de auditoria local.
+3. Configuração de Credenciais e Variáveis (.env)
+O sistema utiliza injeção de dependências via arquivo .env na raiz do projeto (/opt/alesc/agente_ia/).
 
-**Configuração do `docker-compose.yml`:**
-```yaml
-services:
-  agente-ti-alesc:
-    image: agente-ti-alesc:latest
-    ports:
-      - "8501:8501"
-    env_file: .env
-    volumes:
-      - /opt/alesc/agente_ia/data:/app/data  # Base de dados e Logs
-    deploy:
-      resources:
-        limits:
-          memory: 2G
+Conteúdo Obrigatório: GOOGLE_API_KEY=AIzaSy...
+
+Segurança: Sem esta chave válida, o motor ativa automaticamente o Modo de Contingência (Fallback 2511).
+
+4. Topologia de Diretórios e Persistência (Volumes)
+A arquitetura separa a lógica de execução (Docker) dos dados de conhecimento e auditoria (Host).
+
+Caminho Host: /opt/alesc/agente_ia/data -> Container: /app/data (Índice e CSV)
+
+Caminho Host: /opt/alesc/agente_ia/data/logs -> Container: /app/data/logs (Auditoria)
+
+Nota: Os arquivos .index e .csv devem estar na pasta /data do host antes da inicialização.
+
+5. Instruções de Build (Dockerfile)
+O build utiliza python:3.10-slim com suporte nativo para as bibliotecas de busca vetorial.
+
+Dockerfile
+FROM python:3.10-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+RUN mkdir -p /app/data/logs
+EXPOSE 8501
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+6. Comando de Execução em Produção (Docker Run)
+Este comando contempla as diretrizes de segurança de rede, limites de memória e as flags de estabilidade do servidor Streamlit:
+
+Bash
+docker run -d -p 8501:8501 \
+  --name agente_ia_prod \
+  --env-file .env \
+  -v "/opt/alesc/agente_ia/data:/app/data" \
+  --shm-size=2gb \
+  --restart always \
+  piloto-agente-alesc \
+  streamlit run app.py \
+    --server.port=8501 \
+    --server.address=0.0.0.0 \
+    --server.enableCORS=false \
+    --server.enableXsrfProtection=false \
+    --server.maxMessageSize=200
+7. Comandos de Manutenção (SysAdmin)
+Verificar Status de RAM: docker stats agente_ia_prod
+
+Logs em Tempo Real: docker logs -f agente_ia_prod
+
+Atualizar Base: Substituir arquivos na pasta /data do host e executar docker restart agente_ia_prod
