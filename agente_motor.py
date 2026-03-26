@@ -1,10 +1,15 @@
-from logica_busca import buscar_contexto_ia
+from logica_busca import buscar_contexto_ia, verificar_saudacao
 from database import execute_query 
 import os
 import json
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
 import time
+import re
+
+# Força o Python a liberar o print no terminal do Docker imediatamente
+sys.stdout.reconfigure(line_buffering=True)
 
 # Forçando o modo REST para evitar latência
 os.environ["transport"] = "rest" 
@@ -27,6 +32,31 @@ class MotorIA:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
+    def limpar_texto_otrs(self, texto):
+        """
+        Limpeza conservadora: remove apenas HTML e normaliza o texto.
+        PRESERVA LINKS E CONTEÚDO TÉCNICO.
+        """
+        if not texto: return ""
+        
+        # 1. Remove tags HTML (sujeira de banco de dados/e-mail)
+        texto = re.sub(r'<.*?>', '', texto)
+        
+        # 2. Remove saudações e assinaturas comuns para focar na solução
+        regras_limpeza = [
+            r"(?i)atenciosamente.*", r"(?i)cordialmente.*", 
+            r"(?i)bom dia.*", r"(?i)boa tarde.*", r"(?i)boa noite.*",
+            r"(?i)enviado do meu.*"
+        ]
+        for regra in regras_limpeza:
+            texto = re.sub(regra, '', texto, flags=re.DOTALL)
+            
+        # 3. Normaliza espaços e quebras de linha (deixa o texto contínuo)
+        texto = re.sub(r'\s+', ' ', texto)
+        
+        # 4. Limite de segurança por chamado (ajustado para 1000 para não cortar links longos)
+        return texto[:1000].strip()
+
     def salvar_log_local(self, usuario, relato, resposta, tempo_exec):
         """Salva a interação em um arquivo JSON local para auditoria."""
         log_path = os.path.join(self.log_dir, "atendimentos.json")
@@ -37,95 +67,102 @@ class MotorIA:
             "resposta": resposta,
             "performance_segundos": round(tempo_exec, 2)
         }
-        
         try:
             logs = []
             if os.path.exists(log_path):
                 with open(log_path, 'r', encoding='utf-8') as f:
-                    try:
-                        logs = json.load(f)
-                    except json.JSONDecodeError:
-                        logs = []
+                    try: logs = json.load(f)
+                    except: logs = []
             
             logs.append(novo_log)
-            
             with open(log_path, 'w', encoding='utf-8') as f:
                 json.dump(logs, f, indent=4, ensure_ascii=False)
         except Exception as e:
             print(f"⚠️ Erro ao salvar log local: {e}")
 
-    def buscar_conhecimento_otrs(self, relato):
-        """Busca refinada no banco para casos específicos."""
-        try:
-            stopwords = ['estou', 'está', 'fazer', 'problema', 'preciso', 'ajuda']
-            relato_limpo = relato.lower()
-            for char in ".,?!:;()":
-                relato_limpo = relato_limpo.replace(char, "")
-            
-            palavras = [p for p in relato_limpo.split() if len(p) > 3 and p not in stopwords]
-            if not palavras: palavras = relato_limpo.split()[:2]
-
-            filtros = " OR ".join(["t.title LIKE %s OR adm.a_body LIKE %s" for _ in palavras])
-            query = f"""
-            SELECT t.title, CAST(LEFT(adm.a_body, 800) AS CHAR) as a_body 
-            FROM ticket t
-            JOIN article a ON t.id = a.ticket_id
-            JOIN article_data_mime adm ON a.id = adm.article_id
-            WHERE ({filtros}) AND t.ticket_state_id IN (2, 3)
-            ORDER BY t.create_time DESC LIMIT 5
-            """
-            
-            params = []
-            for p in palavras:
-                params.extend([f"%{p}%", f"%{p}%"])
-                
-            resultados = execute_query(query, tuple(params))
-            if not resultados: return "Nenhum histórico específico encontrado."
-                
-            contexto = ""
-            for res in resultados:
-                titulo = str(res.get('title', 'Sem Título'))
-                corpo = str(res.get('a_body', 'Sem Conteúdo')).replace('\n', ' ').strip()
-                contexto += f"\n[HISTÓRICO REAL ALESC]\nAssunto: {titulo}\nSolução: {corpo[:500]}\n"
-            return contexto
-        except Exception as e:
-            print(f"⚠️ Erro ao acessar banco: {e}")
-            return "Erro técnico ao acessar o histórico."
-
     def processar_atendimento_stream(self, usuario, relato, historico=""):
         inicio_atendimento = time.time()
-        contexto_real = buscar_contexto_ia(relato)
         
+        # --- 1. FILTRO DE SAUDAÇÃO ---
+        if verificar_saudacao(relato) and len(relato.split()) < 4:
+            yield f"Olá {usuario}! Sou o Assistente de TI da ALESC. Como posso ajudar com os sistemas da Casa hoje?"
+            return
+
+        # --- 2. BUSCA E LIMPEZA DE CONTEXTO ---
+        print(f"\n🔍 [DEBUG 1] Iniciando busca de contexto...")
+        try:
+            contexto_bruto = buscar_contexto_ia(relato, top_k=5)
+            
+            if isinstance(contexto_bruto, list):
+                contexto_limpo = [self.limpar_texto_otrs(c) for c in contexto_bruto]
+                contexto_real = "\n---\n".join(contexto_limpo)
+            else:
+                contexto_real = self.limpar_texto_otrs(contexto_bruto)
+
+            print("\n--- [DEBUG 2.5] CONTEXTO ENVIADO (HTML REMOVIDO / LINKS PRESERVADOS) ---")
+            print(contexto_real[:500] + "...") 
+            print("--- FIM DO CONTEXTO ---\n")
+
+        except Exception as e:
+            print(f"❌ [DEBUG ERRO BUSCA]: {str(e)}")
+            contexto_real = "Erro ao buscar contexto técnico."
+
+        # --- 3. PROMPT REFINADO ---
+        RAMAL_OFICIAL = "2511"
         prompt_final = (
-            f"Você é o Assistente Técnico de TI da ALESC.\n"
-            f"Responda ESTRITAMENTE baseando-se no histórico abaixo.\n\n"
+            f"Você é o Assistente Técnico de TI da ALESC. Use o HISTÓRICO abaixo e os DADOS MESTRES.\n\n"
+            f"--- DADOS MESTRES (VERDADE ABSOLUTA) ---\n"
+            f"- O ramal oficial do suporte de TI é: {RAMAL_OFICIAL}\n"
+            f"- SEMPRE use este ramal ao direcionar o usuário para o suporte por telefone.\n\n"
             f"--- HISTÓRICO REAL OTRS ---\n{contexto_real}\n\n"
-            f"USUÁRIO: {usuario}\nPROBLEMA: {relato}\n\n"
-            f"DIRETRIZES: 1. Anonimize nomes e gabinetes. 2. Use 'unidade administrativa'. 3. Sistema oficial é SEI. 4. Se não for TI, direcione para o setor correto."
+            f"REGRAS DE OURO:\n"
+            f"1. PROIBIDO inventar qualquer outro número de ramal. Use apenas o {RAMAL_OFICIAL}.\n"
+            f"2. Se o problema for senha do SEI, foque no procedimento de troca de senha de rede da ALESC.\n"
+            f"3. Responda de forma técnica, direta e educada.\n\n"
+            f"USUÁRIO: {usuario}\n"
+            f"PROBLEMA: {relato}\n\n"
+            f"RESPOSTA TÉCNICA FORMATADA:"
         )
         
         try:
-            print("📡 Solicitando resposta ao Gemini...")
+            print("📡 [DEBUG 3] Solicitando resposta ao Gemini...")
             resposta = self.llm.invoke(prompt_final)
-            full_response = getattr(resposta, 'content', str(resposta)).strip()
             
-            # Salva o log localmente antes de terminar
+            if hasattr(resposta, 'content'):
+                conteudo = resposta.content
+                if isinstance(conteudo, list) and len(conteudo) > 0:
+                    item = conteudo[0]
+                    full_response = item.get('text', str(item)) if isinstance(item, dict) else str(item)
+                else:
+                    full_response = str(conteudo)
+            else:
+                full_response = str(resposta)
+
+            full_response = full_response.strip()
+            
             tempo_total = time.time() - inicio_atendimento
             self.salvar_log_local(usuario, relato, full_response, tempo_total)
             
-            # ADICIONE ESTA LINHA ABAIXO PARA VOLTAR A VER NO TERMINAL:
-            print(f"📊 PERFORMANCE | Total: {tempo_total:.2f}s")
-
             yield full_response
+
         except Exception as e:
-            print(f"❌ Erro na IA: {str(e)}")
-            yield "⚠️ Ocorreu um erro na comunicação. Tente novamente."
+            print(f"❌ [DEBUG ERRO IA]: {str(e)}")
+            erro_str = str(e).lower()
+            if "429" in erro_str or "resource_exhausted" in erro_str:
+                yield f"⚠️ **Alta Demanda:** No momento estou processando muitas solicitações. Entre em contato com o suporte pelo **ramal {RAMAL_OFICIAL}**."
+            else:
+                yield f"⚠️ **Erro técnico:** Tivemos uma oscilação. Por favor, tente novamente ou ligue no **ramal {RAMAL_OFICIAL}**."
 
 agente = MotorIA()
 
 def consultar_ia_stream(usuario, relato, historico=""):
-    if agente:
-        for resposta_parcial in agente.processar_atendimento_stream(usuario, relato, historico):
-            yield resposta_parcial
-    else:
-        yield "❌ Sistema de IA indisponível."
+    global agente
+    try:
+        if agente:
+            for resposta_parcial in agente.processar_atendimento_stream(usuario, relato, historico):
+                yield resposta_parcial
+        else:
+            yield "❌ Sistema de IA indisponível."
+    except Exception as e:
+        print(f"💥 ERRO CRÍTICO: {str(e)}")
+        yield f"⚠️ Erro técnico: {str(e)}"

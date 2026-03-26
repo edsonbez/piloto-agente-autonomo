@@ -37,12 +37,13 @@ def buscar_contexto_ia(pergunta, top_k=5):
             if idx != -1 and idx < len(df_mapping):
                 row = df_mapping.iloc[idx]
                 titulo = str(row.get('title', 'Sem Título')).strip()
-                corpo = str(row.get('a_body', 'Sem Descrição')).replace('\n', ' ').strip()
                 
-                if titulo.lower() == "title": continue
-                contexto += f"\n[HISTÓRICO REAL ALESC]\nAssunto: {titulo}\nSolução: {corpo[:500]}\n"
+                # AUMENTAMOS para 2000 caracteres para pegar a solução completa
+                # Tiramos o .replace('\n', ' ') para manter a formatação original
+                corpo = str(row.get('a_body', 'Sem Descrição'))[:2000].strip()
+                
+                contexto += f"\n--- CHAMADO REAL ALESC ---\nASSUNTO: {titulo}\nPROCEDIMENTO TÉCNICO:\n{corpo}\n"
         
-        print(f"✅ DEBUG - Chamados encontrados: {len(contexto.split('[HISTÓRICO')) - 1}")
         return contexto
     except Exception as e:
         print(f"⚠️ Erro na busca semântica: {e}")

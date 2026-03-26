@@ -2,13 +2,24 @@
 venv/
 .env
 
-# Credenciais do Firebase (Segurança!)
-*.json
+# --- DADOS E ÍNDICES ---
+# Ignora a base bruta e os índices FAISS (que são gerados no Docker)
+data/*.faiss
+data/*.index
+*.csv
+*.parquet
 
-# Cache do Python
+# --- LOGS E AUDITORIA (SEGURANÇA) ---
+# Ignora os arquivos de log que contêm conversas reais
+data/logs/*.json
+!data/logs/.gitkeep
+
+# --- CACHE E SISTEMA ---
 **/__pycache__/
 *.pyc
-
-# Arquivos temporários do Sistema
 .DS_Store
-Thumbs.db
+.vscode/
+
+# --- CONFIGURAÇÕES ---
+# Se você tiver arquivos de configuração JSON fixos, eles serão permitidos agora
+# Mas o 'atendimentos.json' continua bloqueado pela regra acima

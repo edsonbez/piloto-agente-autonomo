@@ -42,3 +42,32 @@
     background-color: #007a33; /* Muda para verde ao passar o mouse */
     color: white;
 }
+
+/* Customização das caixas de Chat (Streamlit moderno) */
+[data-testid="stChatMessage"] {
+    background-color: white !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+    margin-bottom: 10px !important;
+}
+
+/* Deixa o ícone do bot em destaque */
+[data-testid="stChatMessageContent"] {
+    color: #333 !important;
+}
+
+/* Ajuste no botão para ficar com as bordas arredondadas (estilo App) */
+.stButton>button {
+    border-radius: 8px !important;
+    width: 100% !important;
+}
+
+/* Destaque na Sidebar para os nomes Sarah e Gabriela (se você for fazer o menu lateral) */
+.sidebar-footer {
+    position: fixed;
+    bottom: 10px;
+    width: 100%;
+    color: #888;
+    font-size: 0.8rem;
+    text-align: center;
+}
