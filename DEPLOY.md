@@ -1,12 +1,16 @@
-Projeto de agente para atuar no primeiro nível dos chamados
-Versão: 6.0 (Final - Full Spec) | Ambiente: Homologação ALESC
+# 🛡️ Guia de Implantação - Agente de IA (ALESC)
 
-Responsável Técnico: Edson Bez
+**Versão:** 6.0 (Final - Full Spec)  
+**Ambiente:** Homologação ALESC  
+**Responsável Técnico:** Edson Bez  
 
-1. Procedimento de Aquisição do Código (Clonagem e Setup)
+---
+
+## 1. Procedimento de Aquisição do Código (Clonagem e Setup)
+
 Para iniciar a implantação no servidor de homologação da ALESC, siga a sequência abaixo:
 
-Bash
+```bash
 # 1. Navegar para o diretório de aplicações opcionais
 cd /opt
 
@@ -14,61 +18,75 @@ cd /opt
 sudo mkdir -p /opt/alesc && cd /opt/alesc
 
 # 3. Clonar o projeto do repositório oficial
-sudo git clone https://github.com/edsonbez/piloto-agente-autonomo.git agente_ia
-
----
-
-## ⚠️ PASSO CRUCIAL: Carga da Base de Conhecimento (Offline)
-Os arquivos de inteligência vetorial **não residem no repositório Git** devido ao seu tamanho binário (LFS) e políticas de segurança. 
-
-Antes de iniciar o container, o técnico deve realizar a carga manual:
-
-1. **Arquivos Necessários:** - `otrs_conhecimento.index` (Índice FAISS)
-   - `otrs_mapping.csv` (Base de textos expandida)
-2. **Procedimento:** Copiar ambos os arquivos para a pasta:  
-   `/opt/alesc/agente_ia/data/`
-3. **Permissões:** Garantir que o usuário do Docker consiga ler os arquivos:  
-   `sudo chmod 644 /opt/alesc/agente_ia/data/*`
-
----
+sudo git clone [https://github.com/edsonbez/piloto-agente-autonomo.git](https://github.com/edsonbez/piloto-agente-autonomo.git) agente_ia
 
 # 4. Entrar na pasta e ajustar permissões para logs e dados
 cd agente_ia
 sudo mkdir -p data/logs
 sudo chmod -R 775 data/logs
-2. Especificações de Recursos (Sizing & Performance)
-Processamento: 2 vCPUs (x86_64).
 
-Memória RAM: 2 GB (Limite do Container) / 4 GB (Recomendado no Host).
+```
 
-Memória Compartilhada (--shm-size): 2 GB (Obrigatório para o FAISS).
+## 2. Carga da Base de Conhecimento (Offline)
 
-Armazenamento: 20 GB SSD (Imagem + Base + Logs).
+Os arquivos de inteligência vetorial **não residem no repositório Git** devido ao seu tamanho binário e políticas de segurança. Antes de iniciar o container, o técnico deve realizar a carga manual:
 
-Rede Outbound: Porta 443 (HTTPS) para generativelanguage.googleapis.com.
+* **Arquivos Necessários:**
+    * `otrs_conhecimento.index` (Índice FAISS)
+    * `otrs_mapping.csv` (Base de textos expandida)
 
-Rede Inbound: Porta 8501 (TCP) para rede interna.
+* **Procedimento:**
+    Copiar ambos os arquivos para a pasta: `/opt/alesc/agente_ia/data/`
 
-3. Configuração de Credenciais e Variáveis (.env)
-O sistema utiliza injeção de dependências via arquivo .env na raiz do projeto (/opt/alesc/agente_ia/).
+* **Permissões de Acesso:**
+```bash
+sudo chmod 644 /opt/alesc/agente_ia/data/*
 
-Conteúdo Obrigatório: GOOGLE_API_KEY=AIzaSy...
+```
 
-Segurança: Sem esta chave válida, o motor ativa automaticamente o Modo de Contingência (Fallback 2511).
+## 3. Especificações de Recursos (Sizing & Performance)
 
-4. Topologia de Diretórios e Persistência (Volumes)
-A arquitetura separa a lógica de execução (Docker) dos dados de conhecimento e auditoria (Host).
+* **Processamento:** 2 vCPUs (x86_64).
+* **Memória RAM:** 2 GB (Limite do Container) / 4 GB (Host).
+* **Memória Compartilhada (--shm-size):** **2 GB** (Obrigatório para o FAISS).
+* **Armazenamento:** 20 GB SSD.
+* **Rede Outbound:** Porta 443 (HTTPS) para `generativelanguage.googleapis.com`.
 
-Caminho Host: /opt/alesc/agente_ia/data -> Container: /app/data (Índice e CSV)
+---
 
-Caminho Host: /opt/alesc/agente_ia/data/logs -> Container: /app/data/logs (Auditoria)
+## 4. Configuração de Credenciais (.env)
 
-Nota: Os arquivos .index e .csv devem estar na pasta /data do host antes da inicialização.
+O sistema utiliza um arquivo `.env` na raiz do projeto (`/opt/alesc/agente_ia/`).
 
-5. Instruções de Build (Dockerfile)
-O build utiliza python:3.10-slim com suporte nativo para as bibliotecas de busca vetorial.
+* **Conteúdo Obrigatório:** `GOOGLE_API_KEY=AIzaSy...`
+* **Segurança:** Sem esta chave válida, o motor ativa o **Modo de Contingência (Fallback 2511)**.
 
-Dockerfile
+---
+
+## 5. Estrutura de Diretórios (Padrão de Produção)
+
+Seguindo o modelo de persistência em volume para conformidade com a LGPD:
+
+```bash
+/opt/alesc/agente_ia/
+├── app.py                # Interface Streamlit
+├── agente_motor.py       # Lógica da IA e Gravação de Logs
+├── logica_busca.py       # Motor de busca semântica FAISS
+├── database.py           # Driver de conexão MySQL
+├── /data                 # VOLUME PERSISTENTE (Host)
+│   ├── otrs_conhecimento.index
+│   ├── otrs_mapping.csv
+│   └── /logs             # Auditoria local (atendimentos.json)
+├── /scripts              # Manutenção e Automação
+│   └── indexador_otrs.py # Pipeline de atualização incremental
+├── Dockerfile            # Receita da imagem oficial
+└── DEPLOY.md             # Manual técnico de implantação
+
+```
+
+## 6. Instruções de Build (Dockerfile)
+
+```dockerfile
 FROM python:3.10-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
@@ -78,10 +96,14 @@ COPY . .
 RUN mkdir -p /app/data/logs
 EXPOSE 8501
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-6. Comando de Execução em Produção (Docker Run)
+
+```
+
+## 7. Comando de Execução em Produção (Docker Run)
+
 Este comando contempla as diretrizes de segurança de rede, limites de memória e as flags de estabilidade do servidor Streamlit:
 
-Bash
+```bash
 docker run -d -p 8501:8501 \
   --name agente_ia_prod \
   --env-file .env \
@@ -95,9 +117,12 @@ docker run -d -p 8501:8501 \
     --server.enableCORS=false \
     --server.enableXsrfProtection=false \
     --server.maxMessageSize=200
-7. Comandos de Manutenção (SysAdmin)
-Verificar Status de RAM: docker stats agente_ia_prod
 
-Logs em Tempo Real: docker logs -f agente_ia_prod
+```
 
-Atualizar Base: Substituir arquivos na pasta /data do host e executar docker restart agente_ia_prod
+## 8. Comandos de Manutenção (SysAdmin)
+
+* **Verificar Status de RAM:** `docker stats agente_ia_prod`
+* **Logs em Tempo Real:** `docker logs -f agente_ia_prod`
+* **Atualizar Base:** Substituir arquivos em `/data` e rodar `docker restart agente_ia_prod`
+

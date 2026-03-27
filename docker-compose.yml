@@ -10,9 +10,12 @@ services:
     env_file:
       - .env
     volumes:
-      - /opt/alesc/agente_ia/data:/app/data  # Mapeia toda a pasta data (incluindo logs)
+      - ./data:/app/data  # Mapeia a pasta local data para o container
+    shm_size: '2gb'       # OBRIGATÓRIO para o FAISS (processamento vetorial)
     deploy:
       resources:
         limits:
           memory: 2G
     restart: always
+    # Adicionando o comando explícito para garantir os parâmetros do Streamlit
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.maxMessageSize=200
