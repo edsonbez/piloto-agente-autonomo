@@ -3,7 +3,7 @@ Arquitetura Técnica: Agente de IA ALESC
 Este diagrama descreve o fluxo de dados desde a pergunta do utilizador até à resposta final, destacando a técnica de RAG (Retrieval-Augmented Generation) e o isolamento em Docker.
 
 1. Fluxo de Execução (Diagrama de Arquitetura)
-
+```mermaid
 graph TD
     A[Utilizador / Interface Streamlit] -->|1. Pergunta em Linguagem Natural| B(Agente Motor)
     B -->|2. Embedding da Pergunta| C[Sentence Transformers]
@@ -34,7 +34,7 @@ graph TD
     B -.->|Log de Auditoria| H
     B -.->|Registo de Metadados| I
 
-
+```
 2. Pontos Chave para a Apresentação (TI)
 
 A. Porquê RAG?
